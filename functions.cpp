@@ -433,3 +433,99 @@ void backward_pass_fc(
 // It computes the gradients of the loss with respect to the weights and biases, and updates them using gradient descent.
 // The gradients are calculated based on the difference between predicted probabilities and the true label.
 // The learning rate controls how much to adjust the weights and biases during training.
+
+
+
+
+
+
+
+
+
+
+
+
+ImageSet load_filters(const std::string& filename) {
+    ImageSet filters;
+    std::ifstream file(filename);
+    if (!file) {
+        std::cerr << "Failed to open filters file: " << filename << std::endl;
+        return filters;
+    }
+
+    Image current_filter;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty()) {
+            if (!current_filter.empty()) {
+                filters.push_back(current_filter);
+                current_filter.clear();
+            }
+            continue;
+        }
+
+        std::istringstream iss(line);
+        std::vector<float> row;
+        float val;
+        while (iss >> val) {
+            row.push_back(val);
+        }
+        current_filter.push_back(row);
+    }
+
+    if (!current_filter.empty()) {
+        filters.push_back(current_filter); // Push last filter
+    }
+
+    return filters;
+}
+
+
+
+
+std::vector<std::vector<float>> load_fc_weights(const std::string& filename) {
+    std::vector<std::vector<float>> weights;
+    std::ifstream file(filename);
+    if (!file) {
+        std::cerr << "Failed to open fc_weights file: " << filename << std::endl;
+        return weights;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::vector<float> row;
+        float val;
+        while (iss >> val) {
+            row.push_back(val);
+        }
+        weights.push_back(row);
+    }
+
+    return weights;
+}
+
+
+
+
+std::vector<float> load_fc_biases(const std::string& filename) {
+    std::vector<float> biases;
+    std::ifstream file(filename);
+    if (!file) {
+        std::cerr << "Failed to open fc_biases file: " << filename << std::endl;
+        return biases;
+    }
+
+    float val;
+    while (file >> val) {
+        biases.push_back(val);
+    }
+
+    return biases;
+}
+
+
+
+
+
+
