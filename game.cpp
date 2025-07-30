@@ -1,6 +1,6 @@
 #define SDL_MAIN_HANDLED
-#include <SDL.h>
-#include <SDL_ttf.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -8,6 +8,28 @@
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
+#include"functions.h"
+#include <sstream>
+#include <fstream>
+#include <algorithm>
+
+
+
+
+
+
+
+
+Image convertGridToImage(bool pixels[28][28]) {
+    Image image(28, std::vector<float>(28, 0.0f));
+    for (int y = 0; y < 28; ++y)
+        for (int x = 0; x < 28; ++x)
+            image[y][x] = pixels[y][x] ? 1.0f : 0.0f;
+    return image;
+}
+
+
+
 
 // Constants
 const int WINDOW_WIDTH = 800;
@@ -108,20 +130,35 @@ void clearGrid(bool pixels[GRID_SIZE][GRID_SIZE]) {
     }
 }
 
-// Function to simulate CNN prediction
-float simulatePrediction(bool pixels[GRID_SIZE][GRID_SIZE], int /*selectedCategory*/) {
-    int filledCount = 0;
-    for (int y = 0; y < GRID_SIZE; y++)
-        for (int x = 0; x < GRID_SIZE; x++)
-            if (pixels[y][x]) filledCount++;
-    
-    float baseProbability = std::min(1.0f, filledCount / 100.0f);
-    float randomFactor   = (rand() % 100) / 200.0f;  // 0–0.5
-    float categoryBias   = (rand() % 30)  / 100.0f;  // 0–0.3
-    return std::min(0.99f, baseProbability + randomFactor + categoryBias);
-}
+
 
 int main() {
+
+
+
+
+
+
+
+
+
+
+
+
+    ImageSet filters = load_filters("assets/filters.txt");
+    std::vector<std::vector<float>> fc_weights = load_fc_weights("assets/fc_weights.txt");
+    std::vector<float> fc_biases = load_fc_biases("assets/fc_biases.txt");
+
+
+
+
+
+
+
+
+
+
+
     // Initialize random seed
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
     
@@ -250,11 +287,19 @@ int main() {
                              mouseY >= submitButton.rect.y && 
                              mouseY <= submitButton.rect.y + submitButton.rect.h) {
                         
-                        // Simulate prediction
-                        current_probability = simulatePrediction(pixels, selectedCategory);
+                        
+
+
+// here it starts the CNN forward pass
+                        Image input_image = convertGridToImage(pixels);  // convert drawn pixels to CNN input
+                        ForwardResult result = forward_pass(input_image, filters, fc_weights, fc_biases);  // run CNN
+
+                        int predicted_digit = argmax(result.probabilities);  // actual predicted digit (0–9)
+                        current_probability = result.probabilities[selectedCategory];  // how confident the model is in the user's chosen digit
+
                         
                         // Calculate score (0-100 based on probability)
-                        score = static_cast<int>(current_probability * 100);
+                        score = static_cast<int>(current_probability *10* 100);
                         app_state = RESULT_SCREEN;
                     }
                     // Check if drawing on grid
