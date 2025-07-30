@@ -60,4 +60,18 @@ void backward_pass_fc(
 // Utility
 int argmax(const std::vector<float>& vec);
 
+
+
+
+
+
+
+//for that game
+
+std::vector<std::vector<float>> load_fc_weights(const std::string& filename);
+std::vector<float> load_fc_biases(const std::string& filename);
+ImageSet load_filters(const std::string& filename);
+
+std::vector<float> load_fc_biases(const std::string& filename);
+
 #endif // TEKU_H
