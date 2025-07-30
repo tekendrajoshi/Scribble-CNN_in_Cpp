@@ -12,6 +12,75 @@
 #include <ctime>   // for seeding rand()
 using namespace std;
 
+
+
+// FUNCTIONS TO STORE THE TRAINED PARAMETERS IN A FILE SO THAT WE CAN THEM USE TO TRAIN THE IMAGE SENT FROM THE GAME APP.
+
+void save_filters(const ImageSet& filters, const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file) {
+        std::cerr << "Failed to open " << filename << " for writing filters." << std::endl;
+        return;
+    }
+
+    for (const auto& filter : filters) {
+        for (const auto& row : filter) {
+            for (float val : row) {
+                file << val << " ";
+            }
+            file << "\n";
+        }
+        file << "\n"; // Separate filters
+    }
+
+    file.close();
+}
+
+
+
+
+
+void save_fc_weights(const std::vector<std::vector<float>>& weights, const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file) {
+        std::cerr << "Failed to open " << filename << " for writing fc weights." << std::endl;
+        return;
+    }
+
+    for (const auto& row : weights) {
+        for (float val : row) {
+            file << val << " ";
+        }
+        file << "\n";
+    }
+
+    file.close();
+}
+
+
+
+void save_fc_biases(const std::vector<float>& biases, const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file) {
+        std::cerr << "Failed to open " << filename << " for writing fc biases." << std::endl;
+        return;
+    }
+
+    for (float val : biases) {
+        file << val << " ";
+    }
+
+    file << "\n";
+    file.close();
+}
+
+
+
+
+
+
+
+
 const int EPOCHS= 6; // Number of epochs for training
 // Your typedefs or using aliases if any
 using Image = vector<vector<float>>;
@@ -186,6 +255,17 @@ for(int i=0; i<EPOCHS; i++)
         backward_pass_fc(result.flattened_input, result.probabilities, dataset.labels[j], fc_weights, fc_biases, learning_rate);
 
     }
+
+
+    // Now call the functions to save the trained parameters to files
+    save_filters(filters, "assets/filters.txt");
+    save_fc_weights(fc_weights, "assets/fc_weights.txt");
+    save_fc_biases(fc_biases, "assets/fc_biases.txt");
+
+
+
+
+
     float accuracy = (float)correct / total * 100.0f;
     std::cout << "Epoch " << i+ 1 << " - Accuracy: " << accuracy << "%\n"; // Print accuracy for the epoch
     std::cout << "Epoch " << i + 1 << " - Average Loss: " << total_loss / total << "\n"; // average loss for the epoch
