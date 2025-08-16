@@ -24,9 +24,13 @@ Image convertGridToImage(bool pixels[28][28]) {
     Image image(28, std::vector<float>(28, 0.0f));
     for (int y = 0; y < 28; ++y)
         for (int x = 0; x < 28; ++x)
-            image[y][x] = pixels[y][x] ? 1.0f : 0.0f;
+            image[y][x] = pixels[y][x] ? .0f : 0.0f;
     return image;
+
+
 }
+
+
 
 
 
@@ -34,18 +38,19 @@ Image convertGridToImage(bool pixels[28][28]) {
 // Constants
 const int WINDOW_WIDTH = 800;
 const int WINDOW_HEIGHT = 650;
-const int PIXEL_SIZE = 25; // Size of each pixel in the grid
-const int GRID_SIZE = 28; // Size of the MNIST grid (28x28 pixels)
+const int PIXEL_SIZE = 4; // Size of each pixel in the grid
+const int GRID_SIZE = 112; // Size of the MNIST grid (28x28 pixels)  line 41/42
 const int BUTTON_HEIGHT = 20;
 const int GRID_OFFSET_X = (WINDOW_WIDTH - GRID_SIZE * PIXEL_SIZE) / 2;
-const int GRID_OFFSET_Y = 30; //this is the top offset for the grid
+const int GRID_OFFSET_Y = (WINDOW_HEIGHT - GRID_SIZE * PIXEL_SIZE) / 2; //this tells where to put the grid on the screen for now it centers the drawing grid in the opened window
 
 // Categories for the MNIST dataset
 // These are the digits 0-9, which are the categories in the MNIST dataset
 
 // MNIST Categories (digits 0-9)
 const std::vector<std::string> CATEGORIES = {
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
+    "airplane", "apple", "bicycle", "book", "car",
+    "cat", "chair", "clock", "cloud", "cup"
 };
 
 struct Button {
@@ -291,7 +296,29 @@ int main() {
 
 
 // here it starts the CNN forward pass
-                        Image input_image = convertGridToImage(pixels);  // convert drawn pixels to CNN input
+                        
+                        // Downsample the 112x112 grid to 28x28 for CNN input
+                        bool small_pixels[28][28] = { false };
+                        for (int y = 0; y < 28; ++y) {
+                            for (int x = 0; x < 28; ++x) {
+                                // Sample the center of each 4x4 block
+                                int startY = y * (GRID_SIZE / 28);
+                                int startX = x * (GRID_SIZE / 28);
+                                bool filled = false;
+                                // If any pixel in the block is set, mark as true
+                                for (int dy = 0; dy < (GRID_SIZE / 28); ++dy) {
+                                    for (int dx = 0; dx < (GRID_SIZE / 28); ++dx) {
+                                        if (pixels[startY + dy][startX + dx]) {
+                                            filled = true;
+                                            break;
+                                        }
+                                    }
+                                    if (filled) break;
+                                }
+                                small_pixels[y][x] = filled;
+                            }
+                        }
+                        Image input_image = convertGridToImage(small_pixels);  // convert downsampled pixels to CNN input
                         ForwardResult result = forward_pass(input_image, filters, fc_weights, fc_biases);  // run CNN
 
                         int predicted_digit = argmax(result.probabilities);  // actual predicted digit (0–9)
@@ -299,7 +326,7 @@ int main() {
 
                         
                         // Calculate score (0-100 based on probability)
-                        score = static_cast<int>(current_probability *10* 100);
+                        score = static_cast<int>(current_probability * 100);
                         app_state = RESULT_SCREEN;
                     }
                     // Check if drawing on grid
@@ -511,3 +538,6 @@ int main() {
 
 
 
+/* TO RUN 
+g++ game.cpp functions.cpp -IC:/sdl2/SDL2-2.26.5/x86_64-w64-mingw32/include -IC:/SDL2_ttf-2.20.2/x86_64-w64-mingw32/include -LC:/sdl2/SDL2-2.26.5/x86_64-w64-mingw32/lib -LC:/SDL2_ttf-2.20.2/x86_64-w64-mingw32/lib -lSDL2 -lSDL2_ttf -o game.exe
+*/
