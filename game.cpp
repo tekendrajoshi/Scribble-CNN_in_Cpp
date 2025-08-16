@@ -2,541 +2,615 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <iostream>
-#include <vector>
 #include <string>
-#include <iomanip>
-#include <cstdlib>
+#include <vector>
+#include <random>
 #include <ctime>
 #include <cmath>
-#include"functions.h"
+#include <iomanip>
 #include <sstream>
-#include <fstream>
-#include <algorithm>
 
+// Include your CNN headers
+#include "functions.h"
 
+// Color definitions for modern styling
+struct Color {
+    uint8_t r, g, b, a;
+    Color(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) : r(r), g(g), b(b), a(a) {}
+};
 
-
-
-
-
-
-Image convertGridToImage(bool pixels[28][28]) {
-    Image image(28, std::vector<float>(28, 0.0f));
-    for (int y = 0; y < 28; ++y)
-        for (int x = 0; x < 28; ++x)
-            image[y][x] = pixels[y][x] ? .0f : 0.0f;
-    return image;
-
-
+// Modern color palette
+namespace Colors {
+    const Color BACKGROUND(25, 25, 35);
+    const Color SURFACE(40, 44, 52);
+    const Color PRIMARY(64, 123, 255);
+    const Color PRIMARY_HOVER(84, 143, 255);
+    const Color SUCCESS(34, 197, 94);
+    const Color ERROR(239, 68, 68);
+    const Color WARNING(245, 158, 11);
+    const Color TEXT_PRIMARY(248, 250, 252);
+    const Color TEXT_SECONDARY(148, 163, 184);
+    const Color ACCENT(139, 92, 246);
+    const Color CANVAS_BG(255, 255, 255);
+    const Color CANVAS_BORDER(203, 213, 225);
 }
 
-
-
-
-
-
-// Constants
-const int WINDOW_WIDTH = 800;
-const int WINDOW_HEIGHT = 650;
-const int PIXEL_SIZE = 4; // Size of each pixel in the grid
-const int GRID_SIZE = 112; // Size of the MNIST grid (28x28 pixels)  line 41/42
-const int BUTTON_HEIGHT = 20;
-const int GRID_OFFSET_X = (WINDOW_WIDTH - GRID_SIZE * PIXEL_SIZE) / 2;
-const int GRID_OFFSET_Y = (WINDOW_HEIGHT - GRID_SIZE * PIXEL_SIZE) / 2; //this tells where to put the grid on the screen for now it centers the drawing grid in the opened window
-
-// Categories for the MNIST dataset
-// These are the digits 0-9, which are the categories in the MNIST dataset
-
-// MNIST Categories (digits 0-9)
-const std::vector<std::string> CATEGORIES = {
-    "airplane", "apple", "bicycle", "book", "car",
+class QuickDrawGUI {
+private:
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+    TTF_Font* font;
+    TTF_Font* titleFont;
+    TTF_Font* smallFont;
+    
+    // CNN Model components
+    ImageSet filters;
+    std::vector<std::vector<float>> fc_weights;
+    std::vector<float> fc_biases;
+    
+    // Game state
+    enum GameState { MENU, DRAWING, RESULT };
+    GameState currentState;
+    
+    // Drawing canvas - scaled up for fullscreen
+    static const int CANVAS_SIZE = 400;  // Smaller canvas fits better
+    static const int CANVAS_X = 50;      // More left margin
+    static const int CANVAS_Y = 100;     // More top margin
+    
+    // Window dimensions - fullscreen
+    static const int WINDOW_WIDTH = 800;
+    static const int WINDOW_HEIGHT = 600;
+    
+    // Drawing data
+    std::vector<std::vector<bool>> canvas;
+    bool isDrawing;
+    
+    // Animation variables
+    float animationTime;
+    int pulsePhase;
+    
+    // Word categories
+    std::vector<std::string> categories = {
+        "airplane", "apple", "bicycle", "book", "car",
     "cat", "chair", "clock", "cloud", "cup"
-};
-
-struct Button {
-    SDL_Rect rect;
-    std::string label;
-    bool visible;
-    SDL_Color color;
-};
-
-enum AppState {
-    WELCOME_SCREEN,
-    DRAWING_SCREEN,
-    RESULT_SCREEN
-};
-
-// Function to render text using SDL_ttf
-void renderText(SDL_Renderer* renderer, TTF_Font* font, const std::string& text, 
-                int x, int y, SDL_Color color) {
-    SDL_Surface* surface = TTF_RenderText_Solid(font, text.c_str(), color);
-    if (!surface) {
-        std::cerr << "Failed to create text surface: " << TTF_GetError() << std::endl;
-        return;
-    }
+    };
+    std::string currentWord;
+    std::string prediction;
+    std::string secondPrediction;
+    float confidence;
+    float secondConfidence;
     
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-    if (!texture) {
-        std::cerr << "Failed to create texture from surface: " << SDL_GetError() << std::endl;
-        SDL_FreeSurface(surface);
-        return;
-    }
+    // Modern styled buttons
+    struct Button {
+        SDL_Rect rect;
+        std::string text;
+        Color bgColor;
+        Color hoverColor;
+        bool isHovered;
+        float hoverAnimation;
+        
+        Button(int x, int y, int w, int h, const std::string& t, Color bg, Color hover) 
+            : rect{x, y, w, h}, text(t), bgColor(bg), hoverColor(hover), isHovered(false), hoverAnimation(0.0f) {}
+    };
     
-    SDL_Rect dstRect = {x, y, surface->w, surface->h};
-    SDL_RenderCopy(renderer, texture, NULL, &dstRect);
+    Button playButton;
+    Button submitButton;
+    Button clearButton;
+    Button newGameButton;
     
-    SDL_DestroyTexture(texture);
-    SDL_FreeSurface(surface);
-}
-
-// Function to draw a grid of pixels
-void drawGrid(SDL_Renderer* renderer, bool pixels[GRID_SIZE][GRID_SIZE]) {
-    // Draw grid background
-    SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
-    SDL_Rect gridRect = {GRID_OFFSET_X, GRID_OFFSET_Y, 
-                         GRID_SIZE * PIXEL_SIZE, GRID_SIZE * PIXEL_SIZE};
-    SDL_RenderFillRect(renderer, &gridRect);
-    
-    // Draw grid lines
-    SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
-    for (int i = 0; i <= GRID_SIZE; i++) {
-        // Horizontal lines
-        SDL_RenderDrawLine(renderer, 
-            GRID_OFFSET_X, GRID_OFFSET_Y + i * PIXEL_SIZE,
-            GRID_OFFSET_X + GRID_SIZE * PIXEL_SIZE, GRID_OFFSET_Y + i * PIXEL_SIZE);
-        // Vertical lines
-        SDL_RenderDrawLine(renderer, 
-            GRID_OFFSET_X + i * PIXEL_SIZE, GRID_OFFSET_Y,
-            GRID_OFFSET_X + i * PIXEL_SIZE, GRID_OFFSET_Y + GRID_SIZE * PIXEL_SIZE);
-    }
-    
-    // Draw filled pixels
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    for (int y = 0; y < GRID_SIZE; y++) {
-        for (int x = 0; x < GRID_SIZE; x++) {
-            if (pixels[y][x]) {
-                SDL_Rect pixelRect = {
-                    GRID_OFFSET_X + x * PIXEL_SIZE,
-                    GRID_OFFSET_Y + y * PIXEL_SIZE,
-                    PIXEL_SIZE, PIXEL_SIZE
-                };
-                SDL_RenderFillRect(renderer, &pixelRect);
+    // Convert canvas to your CNN input format
+    Image convertCanvasToImage() {
+        // Downsample 560x560 canvas to 28x28 (20x20 blocks per pixel)
+        bool small_pixels[28][28] = { false };
+        int scale = CANVAS_SIZE / 28; // 20 pixels per block
+        
+        for (int y = 0; y < 28; ++y) {
+            for (int x = 0; x < 28; ++x) {
+                int startY = y * scale;
+                int startX = x * scale;
+                bool filled = false;
+                // If any pixel in the 20x20 block is set, mark as true
+                for (int dy = 0; dy < scale && !filled; ++dy) {
+                    for (int dx = 0; dx < scale && !filled; ++dx) {
+                        int canvasY = startY + dy;
+                        int canvasX = startX + dx;
+                        if (canvasY < CANVAS_SIZE && canvasX < CANVAS_SIZE && 
+                            canvas[canvasY][canvasX]) {
+                            filled = true;
+                        }
+                    }
+                }
+                small_pixels[y][x] = filled;
             }
         }
+        
+        // Convert to your Image format (28x28 floats)
+        Image image(28, std::vector<float>(28, 0.0f));
+        for (int y = 0; y < 28; ++y) {
+            for (int x = 0; x < 28; ++x) {
+                image[y][x] = small_pixels[y][x] ? 1.0f : 0.0f; //this assumes black background, white drawing
+            }
+        }
+        return image;
     }
-}
-
-// Function to clear the drawing grid
-void clearGrid(bool pixels[GRID_SIZE][GRID_SIZE]) {
-    for (int y = 0; y < GRID_SIZE; y++) {
-        for (int x = 0; x < GRID_SIZE; x++) {
-            pixels[y][x] = false;
+    
+public:
+    QuickDrawGUI() : window(nullptr), renderer(nullptr), font(nullptr), titleFont(nullptr), smallFont(nullptr),
+    currentState(MENU), isDrawing(false), animationTime(0), pulsePhase(0), confidence(0.0f),
+    playButton(WINDOW_WIDTH/2 - 100, 400, 200, 60, "Start Drawing!", Colors::PRIMARY, Colors::PRIMARY_HOVER),
+    submitButton(CANVAS_X + CANVAS_SIZE + 30, CANVAS_Y + 50, 120, 50, "Submit", Colors::SUCCESS, Color(34, 217, 114)),
+    clearButton(CANVAS_X + CANVAS_SIZE + 30, CANVAS_Y + 120, 120, 50, "Clear", Colors::WARNING, Color(255, 178, 31)),
+    newGameButton(WINDOW_WIDTH/2 - 100, 500, 200, 60, "New Game", Colors::ACCENT, Color(159, 112, 255)) 
+{
+    canvas.resize(CANVAS_SIZE, std::vector<bool>(CANVAS_SIZE, false));
+    srand(time(nullptr));
+    
+    // Load your CNN model components
+    filters = load_filters("assets/filters.txt");
+    fc_weights = load_fc_weights("assets/fc_weights.txt");
+    fc_biases = load_fc_biases("assets/fc_biases.txt");
+    std::cout << "CNN model loaded successfully!" << std::endl;
+    }
+    
+    bool initialize() {
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+            std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
+            return false;
+        }
+        
+        if (TTF_Init() == -1) {
+            std::cerr << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << std::endl;
+            return false;
+        }
+        
+        window = SDL_CreateWindow("Quick Draw AI ✨", 
+            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+            WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+        if (window == nullptr) {
+            std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+            return false;
+        }
+        
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+        if (renderer == nullptr) {
+            std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+            return false;
+        }
+        
+        // Load multiple font sizes for better typography
+        loadFonts();
+        
+        return true;
+    }
+    
+    void loadFonts() {
+        // Try your font path and fallbacks
+        std::vector<std::string> fontPaths = {
+            "assets/fonts/arialbd.ttf",  // Your font path
+            "/System/Library/Fonts/SF-Pro-Display-Medium.otf",  // macOS modern
+            "/System/Library/Fonts/Helvetica.ttc",             // macOS fallback
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  // Linux
+            "C:\\Windows\\Fonts\\segoeui.ttf",                 // Windows modern
+            "C:\\Windows\\Fonts\\arial.ttf"                    // Windows fallback
+        };
+        
+        for (const auto& path : fontPaths) {
+            titleFont = TTF_OpenFont(path.c_str(), 36);
+            font = TTF_OpenFont(path.c_str(), 24);
+            smallFont = TTF_OpenFont(path.c_str(), 18);
+            
+            if (titleFont && font && smallFont) break;
+            
+            if (titleFont) TTF_CloseFont(titleFont);
+            if (font) TTF_CloseFont(font);
+            if (smallFont) TTF_CloseFont(smallFont);
+            titleFont = font = smallFont = nullptr;
+        }
+        
+        if (!font) {
+            std::cout << "Warning: Could not load fonts. Using basic rendering." << std::endl;
         }
     }
-}
-
-
-
-int main() {
-
-
-
-
-
-
-
-
-
-
-
-
-    ImageSet filters = load_filters("assets/filters.txt");
-    std::vector<std::vector<float>> fc_weights = load_fc_weights("assets/fc_weights.txt");
-    std::vector<float> fc_biases = load_fc_biases("assets/fc_biases.txt");
-
-
-
-
-
-
-
-
-
-
-
-    // Initialize random seed
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
     
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        std::cerr << "SDL initialization failed: " << SDL_GetError() << std::endl;
-        return 1;
-    }
-
-    if (TTF_Init() != 0) {
-        std::cerr << "TTF initialization failed: " << TTF_GetError() << std::endl;
-        SDL_Quit();
-        return 1;
-    }
-
-    SDL_Window* window = SDL_CreateWindow(
-        "QuickDraw - MNIST",
-        SDL_WINDOWPOS_CENTERED, 
-        SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH, 
-        WINDOW_HEIGHT,
-        SDL_WINDOW_SHOWN
-    );
-    if(!window) {
-        std::cerr << "Failed to create window: " << SDL_GetError() << std::endl;
+    void cleanup() {
+        if (titleFont) TTF_CloseFont(titleFont);
+        if (font) TTF_CloseFont(font);
+        if (smallFont) TTF_CloseFont(smallFont);
+        if (renderer) SDL_DestroyRenderer(renderer);
+        if (window) SDL_DestroyWindow(window);
         TTF_Quit();
         SDL_Quit();
-        return 1;
     }
-
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if(!renderer) {
-        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
-        if(!renderer) {
-        std::cerr << "Failed to create renderer: " << SDL_GetError() << std::endl;
-        SDL_DestroyWindow(window);
-        TTF_Quit();
-        SDL_Quit();
-        return 1;
+    
+    void setRenderColor(const Color& color) {
+        SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
     }
-    }
-
     
-    // Load fonts
-
-    TTF_Font* titleFont = TTF_OpenFont("assets/fonts/arialbd.ttf", 32);
-    TTF_Font* normalFont = TTF_OpenFont("assets/fonts/arialbd.ttf", 24);
-    TTF_Font* resultFont = TTF_OpenFont("assets/fonts/arialbd.ttf", 36);
-    
-    if (!titleFont || !normalFont || !resultFont) {
-        std::cerr << "Failed to load fonts: " << TTF_GetError() << std::endl;
-    
-    }
-
-    
-    // Initialize drawing grid
-    bool pixels[GRID_SIZE][GRID_SIZE] = { false };
-    int selectedCategory = -1;
-    std::string selectedCategoryLabel = "";
-    AppState app_state = WELCOME_SCREEN;
-    float current_probability = 0.0f;
-    int score = 0;
-    
-    // Create buttons
-    Button categoryButtons[CATEGORIES.size()];
-    Button clearButton = { {WINDOW_WIDTH/2 - 150, WINDOW_HEIGHT - 50, 120, BUTTON_HEIGHT}, 
-                         "CLEAR", true, {70, 130, 180, 255} };
-    Button submitButton = { {WINDOW_WIDTH/2 + 30, WINDOW_HEIGHT - 50, 120, BUTTON_HEIGHT}, 
-                          "SUBMIT", true, {70, 130, 180, 255} };
-    Button backButton = { {WINDOW_WIDTH/2 - 60, WINDOW_HEIGHT - 50, 120, BUTTON_HEIGHT}, 
-                        "BACK", true, {70, 130, 180, 255} };
-    
-    // Initialize category buttons
-    int buttonY = 150;
-    for (int i = 0; i < CATEGORIES.size(); i++) {
-        categoryButtons[i] = { {WINDOW_WIDTH/2 - 100, buttonY, 200, BUTTON_HEIGHT}, 
-                             CATEGORIES[i], true, {70, 130, 180, 255} };
-        buttonY += BUTTON_HEIGHT + 10;
-    }
-
-    // Main loop
-    bool running = true;
-    bool drawing = false;
-    bool erasing = false;
-    SDL_Event event;
-
-    while (running) {
-        // Handle events
-        while (SDL_PollEvent(&event)) {
-           if (event.type == SDL_QUIT) {
-            running = false;
+    void drawText(const std::string& text, int x, int y, TTF_Font* useFont, const Color& color, bool centered = false) {
+        if (!useFont) {
+            // Fallback rectangle rendering
+            setRenderColor(color);
+            int width = text.length() * 8;
+            if (centered) x -= width / 2;
+            SDL_Rect textRect = {x, y, width, 16};
+            SDL_RenderDrawRect(renderer, &textRect);
+            return;
+        }
+        
+        SDL_Color sdlColor = {color.r, color.g, color.b, color.a};
+        SDL_Surface* textSurface = TTF_RenderText_Blended(useFont, text.c_str(), sdlColor);
+        if (textSurface) {
+            SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            if (textTexture) {
+                int textX = centered ? x - textSurface->w / 2 : x;
+                SDL_Rect textRect = {textX, y, textSurface->w, textSurface->h};
+                SDL_RenderCopy(renderer, textTexture, nullptr, &textRect);
+                SDL_DestroyTexture(textTexture);
             }
-
+            SDL_FreeSurface(textSurface);
+        }
+    }
+    
+    void drawModernButton(Button& button, int mouseX, int mouseY) {
+        // Check if mouse is hovering
+        bool wasHovered = button.isHovered;
+        button.isHovered = isPointInRect(mouseX, mouseY, button.rect);
+        
+        // Smooth hover animation
+        float targetAnimation = button.isHovered ? 1.0f : 0.0f;
+        button.hoverAnimation += (targetAnimation - button.hoverAnimation) * 0.15f;
+        
+        // Interpolate colors
+        Color currentColor = {
+            (uint8_t)(button.bgColor.r + (button.hoverColor.r - button.bgColor.r) * button.hoverAnimation),
+            (uint8_t)(button.bgColor.g + (button.hoverColor.g - button.bgColor.g) * button.hoverAnimation),
+            (uint8_t)(button.bgColor.b + (button.hoverColor.b - button.bgColor.b) * button.hoverAnimation),
+            255
+        };
+        
+        // Draw button with rounded corners effect (multiple rectangles)
+        int elevation = (int)(4 * button.hoverAnimation);
+        SDL_Rect shadowRect = {button.rect.x + 2, button.rect.y + 2 + elevation, button.rect.w, button.rect.h};
+        
+        // Shadow
+        setRenderColor(Color(0, 0, 0, 30));
+        SDL_RenderFillRect(renderer, &shadowRect);
+        
+        // Main button
+        SDL_Rect mainRect = {button.rect.x, button.rect.y - elevation, button.rect.w, button.rect.h};
+        setRenderColor(currentColor);
+        SDL_RenderFillRect(renderer, &mainRect);
+        
+        // Border highlight
+        setRenderColor(Color(255, 255, 255, (uint8_t)(20 + 10 * button.hoverAnimation)));
+        SDL_RenderDrawRect(renderer, &mainRect);
+        
+        // Text
+        int textY = mainRect.y + (mainRect.h - 24) / 2;
+        drawText(button.text, mainRect.x + mainRect.w / 2, textY, font, Colors::TEXT_PRIMARY, true);
+    }
+    
+    void drawGradientBackground() {
+        // Simple gradient effect using horizontal lines
+        for (int y = 0; y < WINDOW_HEIGHT; y++) {
+            float ratio = (float)y / WINDOW_HEIGHT;
+            uint8_t r = (uint8_t)(Colors::BACKGROUND.r + (Colors::SURFACE.r - Colors::BACKGROUND.r) * ratio);
+            uint8_t g = (uint8_t)(Colors::BACKGROUND.g + (Colors::SURFACE.g - Colors::BACKGROUND.g) * ratio);
+            uint8_t b = (uint8_t)(Colors::BACKGROUND.b + (Colors::SURFACE.b - Colors::BACKGROUND.b) * ratio);
             
-            // Mouse button pressed
-            else if (event.type == SDL_MOUSEBUTTONDOWN) {
-                int mouseX, mouseY;
-                SDL_GetMouseState(&mouseX, &mouseY);
-                
-                if (app_state == WELCOME_SCREEN) {
-                    // Check category buttons
-                    for (int i = 0; i < CATEGORIES.size(); i++) {
-                        if (mouseX >= categoryButtons[i].rect.x && 
-                            mouseX <= categoryButtons[i].rect.x + categoryButtons[i].rect.w &&
-                            mouseY >= categoryButtons[i].rect.y && 
-                            mouseY <= categoryButtons[i].rect.y + categoryButtons[i].rect.h) {
-                            
-                            selectedCategory = i;
-                            selectedCategoryLabel = CATEGORIES[i];
-                            app_state = DRAWING_SCREEN;
-                            clearGrid(pixels);
-                        }
-                    }
-                }
-                else if (app_state == DRAWING_SCREEN) {
-                    // Check clear button
-                    if (mouseX >= clearButton.rect.x && 
-                        mouseX <= clearButton.rect.x + clearButton.rect.w &&
-                        mouseY >= clearButton.rect.y && 
-                        mouseY <= clearButton.rect.y + clearButton.rect.h) {
-                        
-                        clearGrid(pixels);
-                    }
-                    // Check submit button
-                    else if (mouseX >= submitButton.rect.x && 
-                             mouseX <= submitButton.rect.x + submitButton.rect.w &&
-                             mouseY >= submitButton.rect.y && 
-                             mouseY <= submitButton.rect.y + submitButton.rect.h) {
-                        
-                        
-
-
-// here it starts the CNN forward pass
-                        
-                        // Downsample the 112x112 grid to 28x28 for CNN input
-                        bool small_pixels[28][28] = { false };
-                        for (int y = 0; y < 28; ++y) {
-                            for (int x = 0; x < 28; ++x) {
-                                // Sample the center of each 4x4 block
-                                int startY = y * (GRID_SIZE / 28);
-                                int startX = x * (GRID_SIZE / 28);
-                                bool filled = false;
-                                // If any pixel in the block is set, mark as true
-                                for (int dy = 0; dy < (GRID_SIZE / 28); ++dy) {
-                                    for (int dx = 0; dx < (GRID_SIZE / 28); ++dx) {
-                                        if (pixels[startY + dy][startX + dx]) {
-                                            filled = true;
-                                            break;
-                                        }
-                                    }
-                                    if (filled) break;
-                                }
-                                small_pixels[y][x] = filled;
-                            }
-                        }
-                        Image input_image = convertGridToImage(small_pixels);  // convert downsampled pixels to CNN input
-                        ForwardResult result = forward_pass(input_image, filters, fc_weights, fc_biases);  // run CNN
-
-                        int predicted_digit = argmax(result.probabilities);  // actual predicted digit (0–9)
-                        current_probability = result.probabilities[selectedCategory];  // how confident the model is in the user's chosen digit
-
-                        
-                        // Calculate score (0-100 based on probability)
-                        score = static_cast<int>(current_probability * 100);
-                        app_state = RESULT_SCREEN;
-                    }
-                    // Check if drawing on grid
-                    else if (mouseX >= GRID_OFFSET_X && mouseX < GRID_OFFSET_X + GRID_SIZE * PIXEL_SIZE &&
-                             mouseY >= GRID_OFFSET_Y && mouseY < GRID_OFFSET_Y + GRID_SIZE * PIXEL_SIZE) {
-                        
-                        int gridX = (mouseX - GRID_OFFSET_X) / PIXEL_SIZE;
-                        int gridY = (mouseY - GRID_OFFSET_Y) / PIXEL_SIZE;
-                        
-                        if (gridX >= 0 && gridX < GRID_SIZE && gridY >= 0 && gridY < GRID_SIZE) {
-                            pixels[gridY][gridX] = true;
-                            drawing = true;
-                        }
-                    }
-                }
-                else if (app_state == RESULT_SCREEN) {
-                    // Check back button
-                    if (mouseX >= backButton.rect.x && 
-                        mouseX <= backButton.rect.x + backButton.rect.w &&
-                        mouseY >= backButton.rect.y && 
-                        mouseY <= backButton.rect.y + backButton.rect.h) {
-                        
-                        app_state = WELCOME_SCREEN;
-                        selectedCategory = -1;
-                        clearGrid(pixels);
-                    }
-                }
-            }
-            
-            // Mouse button released
-            else if (event.type == SDL_MOUSEBUTTONUP) {
-                drawing = false;
-            }
-            
-            // Mouse motion while drawing
-            else if (event.type == SDL_MOUSEMOTION && drawing) {
-                if (app_state == DRAWING_SCREEN) {
-                    int mouseX, mouseY;
-                    SDL_GetMouseState(&mouseX, &mouseY);
+            SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+            SDL_RenderDrawLine(renderer, 0, y, WINDOW_WIDTH, y);
+        }
+    }
+    
+    void drawCanvas() {
+        // Canvas shadow
+        SDL_Rect shadowRect = {CANVAS_X + 4, CANVAS_Y + 4, CANVAS_SIZE, CANVAS_SIZE};
+        setRenderColor(Color(0, 0, 0, 40));
+        SDL_RenderFillRect(renderer, &shadowRect);
+        
+        // Canvas border with gradient effect
+        SDL_Rect borderRect = {CANVAS_X - 3, CANVAS_Y - 3, CANVAS_SIZE + 6, CANVAS_SIZE + 6};
+        setRenderColor(Colors::CANVAS_BORDER);
+        SDL_RenderFillRect(renderer, &borderRect);
+        
+        // Canvas background
+        SDL_Rect canvasRect = {CANVAS_X, CANVAS_Y, CANVAS_SIZE, CANVAS_SIZE};
+        setRenderColor(Colors::CANVAS_BG);
+        SDL_RenderFillRect(renderer, &canvasRect);
+        
+        // Grid pattern (subtle) - adjusted for larger canvas
+        setRenderColor(Color(240, 240, 240));
+        for (int i = 56; i < CANVAS_SIZE; i += 56) { // Grid every 56 pixels (2 blocks)
+            SDL_RenderDrawLine(renderer, CANVAS_X + i, CANVAS_Y, CANVAS_X + i, CANVAS_Y + CANVAS_SIZE);
+            SDL_RenderDrawLine(renderer, CANVAS_X, CANVAS_Y + i, CANVAS_X + CANVAS_SIZE, CANVAS_Y + i);
+        }
+        
+        // Draw the drawing with anti-aliasing effect
+        setRenderColor(Color(20, 20, 20));
+        for (int y = 0; y < CANVAS_SIZE; y++) {
+            for (int x = 0; x < CANVAS_SIZE; x++) {
+                if (canvas[y][x]) {
+                    // Draw main pixel
+                    SDL_RenderDrawPoint(renderer, CANVAS_X + x, CANVAS_Y + y);
                     
-                    if (mouseX >= GRID_OFFSET_X && mouseX < GRID_OFFSET_X + GRID_SIZE * PIXEL_SIZE &&
-                        mouseY >= GRID_OFFSET_Y && mouseY < GRID_OFFSET_Y + GRID_SIZE * PIXEL_SIZE) {
-                        
-                        int gridX = (mouseX - GRID_OFFSET_X) / PIXEL_SIZE;
-                        int gridY = (mouseY - GRID_OFFSET_Y) / PIXEL_SIZE;
-                        
-                        if (gridX >= 0 && gridX < GRID_SIZE && gridY >= 0 && gridY < GRID_SIZE) {
-                            // Set current pixel and neighbors for smoother drawing
-                            for (int dy = -1; dy <= 1; dy++) {
-                                for (int dx = -1; dx <= 1; dx++) {
-                                    int nx = gridX + dx;
-                                    int ny = gridY + dy;
-                                    if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
-                                        pixels[ny][nx] = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Handle key presses
-            if (event.type == SDL_KEYDOWN) {
-                if (event.key.keysym.sym == SDLK_ESCAPE) {
-                    running = false;
-                }
-                else if (event.key.keysym.sym == SDLK_c && app_state == DRAWING_SCREEN) {
-                    clearGrid(pixels);
+                    // Add slight anti-aliasing
+                    setRenderColor(Color(100, 100, 100, 100));
+                    if (x > 0 && !canvas[y][x-1]) SDL_RenderDrawPoint(renderer, CANVAS_X + x - 1, CANVAS_Y + y);
+                    if (x < CANVAS_SIZE-1 && !canvas[y][x+1]) SDL_RenderDrawPoint(renderer, CANVAS_X + x + 1, CANVAS_Y + y);
+                    if (y > 0 && !canvas[y-1][x]) SDL_RenderDrawPoint(renderer, CANVAS_X + x, CANVAS_Y + y - 1);
+                    if (y < CANVAS_SIZE-1 && !canvas[y+1][x]) SDL_RenderDrawPoint(renderer, CANVAS_X + x, CANVAS_Y + y + 1);
+                    setRenderColor(Color(20, 20, 20));
                 }
             }
         }
-
-        // Rendering
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_RenderClear(renderer);
-
-        if (app_state == WELCOME_SCREEN) {
-            // Title
-            renderText(renderer, titleFont, "Welcome to MNIST QuickDraw!", 
-                      WINDOW_WIDTH/2 - 220, 50, {50, 50, 50});
-            renderText(renderer, normalFont, "Select a digit to draw:", 
-                      WINDOW_WIDTH/2 - 100, 100, {80, 80, 80});
-            
-            // Category buttons
-            for (int i = 0; i < CATEGORIES.size(); i++) {
-                SDL_SetRenderDrawColor(renderer, categoryButtons[i].color.r, 
-                                      categoryButtons[i].color.g, 
-                                      categoryButtons[i].color.b, 255);
-                SDL_RenderFillRect(renderer, &categoryButtons[i].rect);
-                
-                // Draw button border
-                SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
-                SDL_RenderDrawRect(renderer, &categoryButtons[i].rect);
-                
-                // Calculate text position to center it in the button
-                int textWidth, textHeight;
-                TTF_SizeText(normalFont, categoryButtons[i].label.c_str(), &textWidth, &textHeight);
-                int textX = categoryButtons[i].rect.x + (categoryButtons[i].rect.w - textWidth) / 2;
-                int textY = categoryButtons[i].rect.y + (categoryButtons[i].rect.h - textHeight) / 2;
-                
-                renderText(renderer, normalFont, categoryButtons[i].label,
-                          textX, textY, {255, 255, 255});
+    }
+    
+    void drawProgressBar(float progress, int x, int y, int width, int height) {
+        // Background
+        SDL_Rect bgRect = {x, y, width, height};
+        setRenderColor(Colors::SURFACE);
+        SDL_RenderFillRect(renderer, &bgRect);
+        
+        // Progress
+        SDL_Rect progressRect = {x, y, (int)(width * progress), height};
+        setRenderColor(Colors::PRIMARY);
+        SDL_RenderFillRect(renderer, &progressRect);
+        
+        // Border
+        setRenderColor(Colors::CANVAS_BORDER);
+        SDL_RenderDrawRect(renderer, &bgRect);
+    }
+    
+    void drawPulsingCircle(int x, int y, int radius, const Color& color) {
+        float pulse = sin(animationTime * 4.0f) * 0.3f + 0.7f;
+        int currentRadius = (int)(radius * pulse);
+        
+        // Draw filled circle (approximate with multiple rectangles)
+        for (int dy = -currentRadius; dy <= currentRadius; dy++) {
+            for (int dx = -currentRadius; dx <= currentRadius; dx++) {
+                if (dx*dx + dy*dy <= currentRadius*currentRadius) {
+                    uint8_t alpha = (uint8_t)(color.a * (1.0f - sqrt(dx*dx + dy*dy) / currentRadius) * pulse);
+                    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, alpha);
+                    SDL_RenderDrawPoint(renderer, x + dx, y + dy);
+                }
             }
+        }
+    }
+    
+    void handleDrawing(int mouseX, int mouseY) {
+        int canvasX = mouseX - CANVAS_X;
+        int canvasY = mouseY - CANVAS_Y;
+        
+        if (canvasX >= 0 && canvasX < CANVAS_SIZE && canvasY >= 0 && canvasY < CANVAS_SIZE) {
+            // Draw with smooth brush - larger for fullscreen
+            int brushSize = 8; // Increased brush size for larger canvas
+            for (int dy = -brushSize; dy <= brushSize; dy++) {
+                for (int dx = -brushSize; dx <= brushSize; dx++) {
+                    int x = canvasX + dx;
+                    int y = canvasY + dy;
+                    float distance = sqrt(dx*dx + dy*dy);
+                    if (x >= 0 && x < CANVAS_SIZE && y >= 0 && y < CANVAS_SIZE && distance <= brushSize) {
+                        canvas[y][x] = true;
+                    }
+                }
+            }
+        }
+    }
+    
+    void clearCanvas() {
+        for (int y = 0; y < CANVAS_SIZE; y++) {
+            for (int x = 0; x < CANVAS_SIZE; x++) {
+                canvas[y][x] = false;
+            }
+        }
+    }
+    
+    void startNewGame() {
+        clearCanvas();
+        currentWord = categories[rand() % categories.size()];
+        currentState = DRAWING;
+        prediction = "";
+        secondPrediction = "";
+        confidence = 0.0f;
+        secondConfidence = 0.0f;
+    }
+    
+    void submitDrawing() {
+        try {
+            // Convert canvas to your CNN input format
+            Image input_image = convertCanvasToImage();
+            
+            // Run forward pass using your functions
+            ForwardResult result = forward_pass(input_image, filters, fc_weights, fc_biases);
+            
+            // Get predictions
+            int predicted_class = argmax(result.probabilities);
+            confidence = result.probabilities[predicted_class];
+            
+            // Find second best prediction
+            int second_class = 0;
+            float second_best = -1.0f;
+            for (int i = 0; i < result.probabilities.size(); i++) {
+                if (i != predicted_class && result.probabilities[i] > second_best) {
+                    second_best = result.probabilities[i];
+                    second_class = i;
+                }
+            }
+            secondConfidence = second_best;
+            
+            // Set prediction strings
+            if (predicted_class >= 0 && predicted_class < categories.size()) {
+                prediction = categories[predicted_class];
+            } else {
+                prediction = "unknown";
+            }
+            
+            if (second_class >= 0 && second_class < categories.size()) {
+                secondPrediction = categories[second_class];
+            } else {
+                secondPrediction = "unknown";
+            }
+            
+            currentState = RESULT;
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error in CNN prediction: " << e.what() << std::endl;
+            prediction = "error";
+            secondPrediction = "error";
+            confidence = 0.0f;
+            secondConfidence = 0.0f;
+            currentState = RESULT;
+        }
+    }
+    
+    bool isPointInRect(int x, int y, const SDL_Rect& rect) {
+        return (x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h);
+    }
+    
+    void handleEvents() {
+        SDL_Event e;
+        int mouseX, mouseY;
+        SDL_GetMouseState(&mouseX, &mouseY);
+        
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                exit(0);
+            }
+            
+            if (e.type == SDL_MOUSEBUTTONDOWN) {
+                if (currentState == MENU && isPointInRect(mouseX, mouseY, playButton.rect)) {
+                    startNewGame();
+                }
+                else if (currentState == DRAWING) {
+                    if (isPointInRect(mouseX, mouseY, submitButton.rect)) {
+                        submitDrawing();
+                    }
+                    else if (isPointInRect(mouseX, mouseY, clearButton.rect)) {
+                        clearCanvas();
+                    }
+                    else if (mouseX >= CANVAS_X && mouseX < CANVAS_X + CANVAS_SIZE &&
+                             mouseY >= CANVAS_Y && mouseY < CANVAS_Y + CANVAS_SIZE) {
+                        isDrawing = true;
+                        handleDrawing(mouseX, mouseY);
+                    }
+                }
+                else if (currentState == RESULT && isPointInRect(mouseX, mouseY, newGameButton.rect)) {
+                    currentState = MENU;
+                }
+            }
+            
+            if (e.type == SDL_MOUSEBUTTONUP) {
+                isDrawing = false;
+            }
+            
+            if (e.type == SDL_MOUSEMOTION && isDrawing) {
+                handleDrawing(mouseX, mouseY);
+            }
+        }
+    }
+    
+    void render() {
+        // Update animation
+        animationTime += 0.016f;
+        
+        // Get mouse position for button hover effects
+        int mouseX, mouseY;
+        SDL_GetMouseState(&mouseX, &mouseY);
+        
+        drawGradientBackground();
+        
+        if (currentState == MENU) {
+            // Title with glow effect
+            drawText("Quick Draw AI", WINDOW_WIDTH/2, 100, titleFont, Colors::TEXT_PRIMARY, true);
+            drawText("✨", WINDOW_WIDTH/2 + 100, 95, titleFont, Colors::ACCENT, true);
+            
+            // Subtitle
+            drawText("Test your drawing skills against AI!", WINDOW_WIDTH/2, 140, font, Colors::TEXT_SECONDARY, true);
+            
+            // Animated decorative circles
+            drawPulsingCircle(120, 180, 25, Colors::PRIMARY);
+            drawPulsingCircle(WINDOW_WIDTH - 120, 320, 20, Colors::ACCENT);
+            
+            drawModernButton(playButton, mouseX, mouseY);
             
             // Footer
-            renderText(renderer, normalFont, "Draw digits and test your skills!",
-                      WINDOW_WIDTH/2 - 160, WINDOW_HEIGHT - 80, {100, 100, 100});
+            drawText("Draw: airplane, apple, bicycle, book, car, cat, chair, clock, cloud, cup", 
+                    WINDOW_WIDTH/2, WINDOW_HEIGHT - 30, smallFont, Colors::TEXT_SECONDARY, true);
         }
-        else if (app_state == DRAWING_SCREEN) {
-            // Title
-            std::string title = "Drawing: " + selectedCategoryLabel;
-            renderText(renderer, titleFont, title.c_str(), 
-                      WINDOW_WIDTH/2 - 100, 10, {50, 50, 50});
+        else if (currentState == DRAWING) {
+            // Header
+            drawText("Draw:", 50, 40, font, Colors::TEXT_SECONDARY);
+            drawText(currentWord, 120, 35, titleFont, Colors::PRIMARY);
             
-            // Draw the grid
-            drawGrid(renderer, pixels);
+            drawCanvas();
             
-            // Draw buttons with text
-            SDL_SetRenderDrawColor(renderer, clearButton.color.r, clearButton.color.g, clearButton.color.b, 255);
-            SDL_RenderFillRect(renderer, &clearButton.rect);
-            SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
-            SDL_RenderDrawRect(renderer, &clearButton.rect);
+            // Side panel with instructions
+            drawText("Instructions:", 520, 100, font, Colors::TEXT_PRIMARY);
+            drawText("Draw in the white area", 520, 125, smallFont, Colors::TEXT_SECONDARY);
+            drawText("Use your mouse to draw", 520, 145, smallFont, Colors::TEXT_SECONDARY);
+            drawText("Click submit when done", 520, 165, smallFont, Colors::TEXT_SECONDARY);
             
-            int textWidth, textHeight;
-            TTF_SizeText(normalFont, clearButton.label.c_str(), &textWidth, &textHeight);
-            int textX = clearButton.rect.x + (clearButton.rect.w - textWidth) / 2;
-            int textY = clearButton.rect.y + (clearButton.rect.h - textHeight) / 2;
-            renderText(renderer, normalFont, clearButton.label, textX, textY, {255, 255, 255});
-
-            SDL_SetRenderDrawColor(renderer, submitButton.color.r, submitButton.color.g, submitButton.color.b, 255);
-            SDL_RenderFillRect(renderer, &submitButton.rect);
-            SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
-            SDL_RenderDrawRect(renderer, &submitButton.rect);
-            
-            TTF_SizeText(normalFont, submitButton.label.c_str(), &textWidth, &textHeight);
-            textX = submitButton.rect.x + (submitButton.rect.w - textWidth) / 2;
-            textY = submitButton.rect.y + (submitButton.rect.h - textHeight) / 2;
-            renderText(renderer, normalFont, submitButton.label, textX, textY, {255, 255, 255});
-            
-            // Instructions
-            renderText(renderer, normalFont, "Draw your digit in the grid above",
-                      WINDOW_WIDTH/2 - 150, WINDOW_HEIGHT - 100, {100, 100, 100});
+            drawModernButton(submitButton, mouseX, mouseY);
+            drawModernButton(clearButton, mouseX, mouseY);
         }
-        else if (app_state == RESULT_SCREEN) {
-            // Title
-            renderText(renderer, titleFont, "Results", 
-                      WINDOW_WIDTH/2 - 60, 50, {50, 50, 50});
+        else if (currentState == RESULT) {
+            // Results with styling
+            drawText("Results", WINDOW_WIDTH/2, 60, titleFont, Colors::TEXT_PRIMARY, true);
             
-            // Selected category
-            std::string categoryText = "You drew: " + selectedCategoryLabel;
-            renderText(renderer, normalFont, categoryText.c_str(), 
-                      WINDOW_WIDTH/2 - 80, 120, {80, 80, 80});
+            drawText("You drew:", WINDOW_WIDTH/2, 110, font, Colors::TEXT_SECONDARY, true);
+            drawText(currentWord, WINDOW_WIDTH/2, 135, font, Colors::TEXT_PRIMARY, true);
             
-            // Probability
-            std::stringstream probStream;
-            probStream << "Probability: " << std::fixed << std::setprecision(1) << (current_probability * 100) << "%";
-            renderText(renderer, resultFont, probStream.str().c_str(), 
-                      WINDOW_WIDTH/2 - 120, 200, {30, 120, 30});
+            // Top 2 AI predictions
+            drawText("AI's top guesses:", WINDOW_WIDTH/2, 175, font, Colors::TEXT_SECONDARY, true);
             
-            // Score
-            std::stringstream scoreStream;
-            scoreStream << "Score: " << score << "/100";
-            renderText(renderer, resultFont, scoreStream.str().c_str(), 
-                      WINDOW_WIDTH/2 - 80, 280, {30, 120, 30});
+            // First prediction
+            drawText("1st: " + prediction, WINDOW_WIDTH/2, 200, font, Colors::ACCENT, true);
+            drawProgressBar(confidence, WINDOW_WIDTH/2 - 80, 225, 160, 15);
+            std::stringstream confidence1Stream;
+            confidence1Stream << std::fixed << std::setprecision(0) << (confidence * 100) << "%";
+            drawText(confidence1Stream.str(), WINDOW_WIDTH/2, 245, smallFont, Colors::TEXT_PRIMARY, true);
             
-            // Feedback
-            std::string feedback;
-            if (score >= 85) {
-                feedback = "Excellent! Perfect match!";
-            } else if (score >= 70) {
-                feedback = "Good job! Close match!";
-            } else if (score >= 50) {
-                feedback = "Not bad! Keep practicing!";
-            } else {
-                feedback = "Try again! You can do better!";
-            }
-            renderText(renderer, normalFont, feedback.c_str(), 
-                      WINDOW_WIDTH/2 - 140, 360, {150, 30, 30});
+            // Second prediction
+            drawText("2nd: " + secondPrediction, WINDOW_WIDTH/2, 275, font, Colors::TEXT_SECONDARY, true);
+            drawProgressBar(secondConfidence, WINDOW_WIDTH/2 - 80, 300, 160, 15);
+            std::stringstream confidence2Stream;
+            confidence2Stream << std::fixed << std::setprecision(0) << (secondConfidence * 100) << "%";
+            drawText(confidence2Stream.str(), WINDOW_WIDTH/2, 320, smallFont, Colors::TEXT_SECONDARY, true);
             
-            // Back button
-            SDL_SetRenderDrawColor(renderer, backButton.color.r, backButton.color.g, backButton.color.b, 255);
-            SDL_RenderFillRect(renderer, &backButton.rect);
-            SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
-            SDL_RenderDrawRect(renderer, &backButton.rect);
+            // Result indicator
+            bool isCorrect = (prediction == currentWord);
+            std::string result = isCorrect ? "🎉 CORRECT!" : "❌ TRY AGAIN!";
+            Color resultColor = isCorrect ? Colors::SUCCESS : Colors::ERROR;
+            drawText(result, WINDOW_WIDTH/2, 355, font, resultColor, true);
             
-            int textWidth, textHeight;
-            TTF_SizeText(normalFont, backButton.label.c_str(), &textWidth, &textHeight);
-            int textX = backButton.rect.x + (backButton.rect.w - textWidth) / 2;
-            int textY = backButton.rect.y + (backButton.rect.h - textHeight) / 2;
-            renderText(renderer, normalFont, backButton.label, textX, textY, {255, 255, 255});
+            drawModernButton(newGameButton, mouseX, mouseY);
         }
-
+        
         SDL_RenderPresent(renderer);
-        SDL_Delay(16); // ~60 FPS
     }
-
-    // Cleanup
-    TTF_CloseFont(titleFont);
-    TTF_CloseFont(normalFont);
-    TTF_CloseFont(resultFont);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    TTF_Quit();
-    SDL_Quit();
-
+    
+    void run() {
+        while (true) {
+            handleEvents();
+            render();
+            SDL_Delay(16);  // ~60 FPS
+        }
+    }
+};
+int main() {
+    QuickDrawGUI game;
+    
+    if (!game.initialize()) {
+        std::cerr << "Failed to initialize!" << std::endl;
+        return -1;
+    }
+    
+    game.run();
+    game.cleanup();
+    
     return 0;
 }
-
-
 
 /* TO RUN 
 g++ game.cpp functions.cpp -IC:/sdl2/SDL2-2.26.5/x86_64-w64-mingw32/include -IC:/SDL2_ttf-2.20.2/x86_64-w64-mingw32/include -LC:/sdl2/SDL2-2.26.5/x86_64-w64-mingw32/lib -LC:/SDL2_ttf-2.20.2/x86_64-w64-mingw32/lib -lSDL2 -lSDL2_ttf -o game.exe
