@@ -57,6 +57,17 @@ void backward_pass_fc(
     float learning_rate
 );
 
+void backward_pass_conv(
+    const Image& image,
+    const ImageSet& filters,
+    const std::vector<std::vector<float>>& fc_weights, // <-- add this
+    const std::vector<float>& flat_input,
+    const std::vector<float>& probs,
+    int label,
+    float learning_rate,
+    ImageSet& filters_update
+);
+
 // Utility
 int argmax(const std::vector<float>& vec);
 
