@@ -440,7 +440,102 @@ void backward_pass_fc(
 
 
 
+// FOR BACKPROPAGATION OF CONV LAYER
 
+void backward_pass_conv(
+    const Image& image,
+    const ImageSet& filters,
+    const std::vector<std::vector<float>>& fc_weights, // <-- add this
+    const std::vector<float>& flat_input,
+    const std::vector<float>& probs,
+    int label,
+    float learning_rate,
+    ImageSet& filters_update
+) {
+    // 1. Compute gradient of loss w.r.t. softmax output
+    std::vector<float> grad_softmax = probs;
+    grad_softmax[label] -= 1.0f; // dL/dz for softmax+cross-entropy
+
+    // 2. Backprop through fully connected layer to flattened input
+    int num_classes = probs.size();
+    int flat_size = flat_input.size();
+    std::vector<float> grad_flat(flat_size, 0.0f);
+    for (int j = 0; j < flat_size; ++j) {
+        for (int i = 0; i < num_classes; ++i) {
+            grad_flat[j] += fc_weights[i][j] * grad_softmax[i];
+        }
+    }
+
+    // 3. Unflatten to pooled outputs (assume 13x13 per filter)
+    int pooled_height = 13, pooled_width = 13;
+    int num_filters = filters.size();
+    std::vector<Image> grad_pooled(num_filters, Image(pooled_height, std::vector<float>(pooled_width, 0.0f)));
+    int idx = 0;
+    for (int f = 0; f < num_filters; ++f) {
+        for (int i = 0; i < pooled_height; ++i) {
+            for (int j = 0; j < pooled_width; ++j) {
+                grad_pooled[f][i][j] = grad_flat[idx++];
+            }
+        }
+    }
+
+    // 4. Backprop through maxpool (2x2)
+    // For each filter, for each pooled cell, propagate gradient to max location in original relu output
+    int conv_height = 26, conv_width = 26;
+    std::vector<Image> grad_relu(num_filters, Image(conv_height, std::vector<float>(conv_width, 0.0f)));
+    for (int f = 0; f < num_filters; ++f) {
+        // Recompute relu output for this filter
+        Image conv = convolve(image, filters[f]);
+        Image relu_out = relu(conv);
+        for (int i = 0; i < pooled_height; ++i) {
+            for (int j = 0; j < pooled_width; ++j) {
+                // Find max location in 2x2 block
+                float max_val = -INFINITY;
+                int max_x = -1, max_y = -1;
+                for (int pi = 0; pi < 2; ++pi) {
+                    for (int pj = 0; pj < 2; ++pj) {
+                        int r = i * 2 + pi;
+                        int c = j * 2 + pj;
+                        if (r < conv_height && c < conv_width && relu_out[r][c] > max_val) {
+                            max_val = relu_out[r][c];
+                            max_x = r;
+                            max_y = c;
+                        }
+                    }
+                }
+                if (max_x != -1 && max_y != -1) {
+                    grad_relu[f][max_x][max_y] += grad_pooled[f][i][j];
+                }
+            }
+        }
+    }
+
+    // 5. Backprop through ReLU
+    for (int f = 0; f < num_filters; ++f) {
+        Image conv = convolve(image, filters[f]);
+        for (int i = 0; i < conv_height; ++i) {
+            for (int j = 0; j < conv_width; ++j) {
+                if (conv[i][j] <= 0) grad_relu[f][i][j] = 0;
+            }
+        }
+    }
+
+    // 6. Backprop through convolution: update filters
+    for (int f = 0; f < num_filters; ++f) {
+        Image& filter = filters_update[f];
+        for (int ki = 0; ki < 3; ++ki) {
+            for (int kj = 0; kj < 3; ++kj) {
+                float grad = 0.0f;
+                for (int i = 0; i < conv_height; ++i) {
+                    for (int j = 0; j < conv_width; ++j) {
+                        grad += grad_relu[f][i][j] * image[i + ki][j + kj];
+                    }
+                }
+                filter[ki][kj] -= learning_rate * grad;
+            }
+        }
+    }
+}
 
 
 
