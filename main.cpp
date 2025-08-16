@@ -1,3 +1,4 @@
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -119,8 +120,8 @@ int main()
 {
 
 
-// Load the dataset (assuming your data is in "mnist_train.csv")
-    LabeledDataset dataset = load_labeled_images_from_csv("mnist_train.csv");
+// Load the dataset (assuming your data is in "mnist_style.csv")
+    LabeledDataset dataset = load_labeled_images_from_csv("mnist_style.csv");
     
     std::cout << "Total images loaded: " << dataset.images.size() << "\n";
     std::cout << "Total labels loaded: " << dataset.labels.size() << "\n";
@@ -210,28 +211,7 @@ int total = dataset.images.size();
 // Loop through each epoch
 for(int i=0; i<EPOCHS; i++)
 {
-    /* 
-    // Create combined vector of (image, label)
-    std::vector<std::pair<Image, int>> combined;
-    for (size_t i = 0; i < all_images.size(); ++i) {
-        combined.push_back({all_images[i], labels[i]});
-    }
-
-    // Shuffle
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    std::shuffle(combined.begin(), combined.end(), std::default_random_engine(seed));
-
-    // Reassign to original vectors
-    all_images.clear();
-    labels.clear();
-    for (auto& pair : combined) {
-        all_images.push_back(pair.first);
-        labels.push_back(pair.second);
-    }
-
-    // Now all_images and labels are shuffled together
-
-*/
+    
 
 
     std::cout << "Epoch " << i + 1 << ": Forward pass for all images..." << std::endl;
