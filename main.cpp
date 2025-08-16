@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -82,7 +81,7 @@ void save_fc_biases(const std::vector<float>& biases, const std::string& filenam
 
 
 
-const int EPOCHS= 6; // Number of epochs for training
+const int EPOCHS= 30; // Number of epochs for training
 // Your typedefs or using aliases if any
 using Image = vector<vector<float>>;
 using ImageSet = vector<Image>;
@@ -120,8 +119,8 @@ int main()
 {
 
 
-// Load the dataset (assuming your data is in "mnist_style.csv")
-    LabeledDataset dataset = load_labeled_images_from_csv("mnist_style.csv");
+// Load the dataset (assuming your data is in "suffled_data.csv")
+    LabeledDataset dataset = load_labeled_images_from_csv("scaled_data.csv");
     
     std::cout << "Total images loaded: " << dataset.images.size() << "\n";
     std::cout << "Total labels loaded: " << dataset.labels.size() << "\n";
@@ -146,25 +145,8 @@ int main()
 
 
 
-/*  
-ImageSet all_images;
-vector<int> labels;
 
-
-for (auto& img : cat_images) {
-    all_images.push_back(img);
-    labels.push_back(0); // label 0 for cat
-}
-
-for (auto& img : dog_images) {
-    all_images.push_back(img);
-    labels.push_back(1); // label 1 for dog
-} */
-
-
-
-
-int num_filters = 5; // Number of filters for the convolution layer
+int num_filters = 4; // Number of filters for the convolution layer
 
     // Fix filters declaration
 std::vector<Image> filters(num_filters); // Declare filters as a vector of Image
@@ -206,7 +188,7 @@ int total = dataset.images.size();
 
 
 
-
+ImageSet filters_update = filters; // Initialize filters_update to the same size as filters
 
 // Loop through each epoch
 for(int i=0; i<EPOCHS; i++)
@@ -234,7 +216,12 @@ for(int i=0; i<EPOCHS; i++)
         // ======= Backward Pass (FC only) =======
         backward_pass_fc(result.flattened_input, result.probabilities, dataset.labels[j], fc_weights, fc_biases, learning_rate);
 
+
+        // ======= Backward Pass (Conv) =======
+        backward_pass_conv(dataset.images[j], filters, fc_weights, result.flattened_input, result.probabilities, dataset.labels[j], learning_rate, filters_update);
+
     }
+    filters = filters_update;
 
 
     // Now call the functions to save the trained parameters to files
@@ -253,3 +240,7 @@ for(int i=0; i<EPOCHS; i++)
     total_loss = 0.0f; // Reset total loss for the next epoch  
 }
 }
+
+
+
+// compile with: g++ main.cpp functions.cpp -o main.exe
