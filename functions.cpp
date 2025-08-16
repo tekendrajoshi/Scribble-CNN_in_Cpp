@@ -528,4 +528,3 @@ std::vector<float> load_fc_biases(const std::string& filename) {
 
 
 
-
