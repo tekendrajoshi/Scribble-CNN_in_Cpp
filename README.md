@@ -8,4 +8,11 @@ Inspired by Google’s Quick, Draw!, the project was built entirely from scratch
 - **🧠 Custom CNN Implementation** – Includes forward pass, convolution, pooling, and fully connected layers coded from scratch.  
 - **🔄 Backpropagation in Convolution & FC Layers** – Full gradient computation and parameter updates for training.  
 - **📊 Training & Evaluation** – Supports multi-epoch training with loss and accuracy tracking.  
-- **📈 Visualization Tools** – Loss curves, accuracy graphs, and confusion matrices for performance analysis.  
+- **📈 Visualization Tools** – Loss curves, accuracy graphs, and confusion matrices for performance analysis.
+
+## 📌 Future Improvements  
+
+- **📂 Multi-class Dataset Support** – Expand recognition to handle a wider range of categories.  
+- **⚡ Real-time Recognition** – Predict sketches dynamically as the user draws.  
+- **🎯 Accuracy Boost** – Improve performance through advanced hyperparameter tuning and optimization.  
+
