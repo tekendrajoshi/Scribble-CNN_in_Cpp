@@ -14,5 +14,5 @@ Inspired by Google’s Quick, Draw!, the project was built entirely from scratch
 
 - **📂 Multi-class Dataset Support** – Expand recognition to handle a wider range of categories.  
 - **⚡ Real-time Recognition** – Predict sketches dynamically as the user draws.  
-- **🎯 Accuracy Boost** – Improve performance through advanced hyperparameter tuning and optimization.  
+- **🎯 Publish for public use** – Publish a complete app for the public use  
 
